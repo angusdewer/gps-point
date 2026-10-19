@@ -37,6 +37,11 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
  <div class="mut">GPS állapot</div>
  <div class="big" id="st">várakozás…</div>
  <div class="mut" id="live"></div>
+ <div id="dist" style="margin-top:10px;padding:10px;border-radius:10px;border:1px solid var(--bd);display:none">
+  <div class="mut">Távolság a céltól (10 mp átlag)</div>
+  <div class="big" id="dv"></div>
+  <div class="mut" id="dd"></div>
+ </div>
 </div>
 
 <div class="c" id="box">
@@ -121,6 +126,25 @@ function tick(){
  else{$('tm').textContent='⏰ Mentés esedékes!';$('box').classList.add('due');try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}}
 }
 
+function updDist(){
+ const T=parseT(),box=$('dist');
+ if(!T){box.style.display='none';return}
+ const now=Date.now();let a=S.fixes.filter(f=>now-f.t<=10000);
+ if(!a.length)a=S.fixes.slice(-1);if(!a.length)return;
+ let sw=0,la=0,lo=0;
+ for(const f of a){const k=1/Math.max(f.acc,1)**2;sw+=k;la+=f.lat*k;lo+=f.lon*k}
+ la/=sw;lo/=sw;
+ const R=111320,dN=(T.lat-la)*R,dE=(T.lon-lo)*R*Math.cos(T.lat*Math.PI/180),d=Math.hypot(dN,dE);
+ const br=(Math.atan2(dE,dN)*180/Math.PI+360)%360,nm=['É','ÉK','K','DK','D','DNy','Ny','ÉNy'][Math.round(br/45)%8];
+ box.style.display='block';
+ let col='var(--bd)',txt;
+ if(d<=1.5){col='var(--ok)';txt='✔ Célon vagy'}
+ else if(d<=5){col='var(--wa)';txt=d.toFixed(1)+' m'}
+ else txt=d<100?d.toFixed(1)+' m':Math.round(d)+' m';
+ box.style.borderColor=col;box.style.boxShadow=d<=1.5?'0 0 0 2px var(--ok)':'none';
+ $('dv').textContent=txt;
+ $('dd').textContent=d<=1.5?'A telefon szerint a célkoordinátán állsz (±'+a[a.length-1].acc.toFixed(0)+' m)':'Irány: '+br.toFixed(0)+'° ('+nm+') · É '+(dN>=0?'+':'')+dN.toFixed(1)+' m, K '+(dE>=0?'+':'')+dE.toFixed(1)+' m';
+}
 function startGps(){
  if(!navigator.geolocation){$('st').textContent='Nincs GPS-támogatás';return}
  navigator.geolocation.watchPosition(p=>{
@@ -128,10 +152,11 @@ function startGps(){
   if(S.fixes.length>600)S.fixes.shift();
   $('st').textContent='±'+c.accuracy.toFixed(1)+' m';
   $('live').textContent=c.latitude.toFixed(7)+', '+c.longitude.toFixed(7)+' · '+S.fixes.length+' fix';
+  updDist();
  },e=>{$('st').textContent='Hiba: '+e.message},{enableHighAccuracy:true,maximumAge:0,timeout:20000});
 }
 load();render();startGps();setInterval(tick,1000);
-$('tgt').addEventListener('change',store);$('iv').addEventListener('change',()=>{store();render()});
+$('tgt').addEventListener('change',()=>{store();updDist()});$('tgt').addEventListener('input',updDist);$('iv').addEventListener('change',()=>{store();render()});
 </script>
 </body>
 </html>

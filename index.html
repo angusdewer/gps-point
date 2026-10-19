@@ -62,7 +62,12 @@ const S={fixes:[],saves:[],start:null,last:0,wl:null};
 const KEY='gpspont1';
 function load(){try{const j=localStorage.getItem(KEY);if(j){const o=JSON.parse(j);S.saves=o.saves||[];S.start=o.start||null;S.last=o.last||0;$('tgt').value=o.tgt||'';$('iv').value=o.iv||10}}catch(e){}}
 function store(){try{localStorage.setItem(KEY,JSON.stringify({saves:S.saves,start:S.start,last:S.last,tgt:$('tgt').value,iv:$('iv').value}))}catch(e){}}
-function parseT(){const m=$('tgt').value.replace(/,/g,' ').trim().split(/\s+/).map(Number);return m.length>=2&&m.every(isFinite)?{lat:m[0],lon:m[1]}:null}
+function parseT(){
+ const m=($('tgt').value.match(/-?\d+(?:[.,]\d+)?/g)||[]).map(x=>Number(x.replace(',','.')));
+ if(m.length!==2)return null;
+ if(Math.abs(m[0])>90||Math.abs(m[1])>180)return null;
+ return{lat:m[0],lon:m[1]};
+}
 
 function avgWindow(){
  const w=+$('win').value*1000,now=Date.now();
@@ -128,7 +133,13 @@ function tick(){
 
 function updDist(){
  const T=parseT(),box=$('dist');
- if(!T){box.style.display='none';return}
+ if(!T){
+  box.style.display=$('tgt').value.trim()?'block':'none';
+  box.style.borderColor='var(--wa)';box.style.boxShadow='none';
+  $('dv').textContent='Hibás koordináta';
+  $('dd').textContent='Írd így: 47.123456, 19.123456 (két szám: szélesség, hosszúság)';
+  return}
+ if(!S.fixes.length){box.style.display='block';$('dv').textContent='Várakozás a GPS-re…';$('dd').textContent='';return}
  const now=Date.now();let a=S.fixes.filter(f=>now-f.t<=10000);
  if(!a.length)a=S.fixes.slice(-1);if(!a.length)return;
  let sw=0,la=0,lo=0;

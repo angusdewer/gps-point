@@ -41,6 +41,9 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
   <div class="mut">Távolság a céltól (10 mp átlag)</div>
   <div class="big" id="dv"></div>
   <div class="mut" id="dd"></div>
+  <div id="arw" style="display:none;text-align:center;font-size:72px;line-height:1.2;margin-top:6px;transition:transform .25s;color:var(--ac)">⬆</div>
+  <div class="mut" id="ah" style="display:none;text-align:center">Tartsd a telefont vízszintesen; a nyíl a cél felé mutat.</div>
+  <button id="cb" class="s" style="margin-top:8px">🧭 Iránytű bekapcsolása</button>
  </div>
 </div>
 
@@ -133,6 +136,7 @@ function tick(){
 
 function updDist(){
  const T=parseT(),box=$('dist');
+ if(!T||!S.fixes.length){S.br=null;if(typeof rot==='function')rot()}
  if(!T){
   box.style.display=$('tgt').value.trim()?'block':'none';
   box.style.borderColor='var(--wa)';box.style.boxShadow='none';
@@ -147,6 +151,7 @@ function updDist(){
  la/=sw;lo/=sw;
  const R=111320,dN=(T.lat-la)*R,dE=(T.lon-lo)*R*Math.cos(T.lat*Math.PI/180),d=Math.hypot(dN,dE);
  const br=(Math.atan2(dE,dN)*180/Math.PI+360)%360,nm=['É','ÉK','K','DK','D','DNy','Ny','ÉNy'][Math.round(br/45)%8];
+ S.br=br;rot();
  box.style.display='block';
  let col='var(--bd)',txt;
  if(d<=1.5){col='var(--ok)';txt='✔ Célon vagy'}
@@ -156,6 +161,34 @@ function updDist(){
  $('dv').textContent=txt;
  $('dd').textContent=d<=1.5?'A telefon szerint a célkoordinátán állsz (±'+a[a.length-1].acc.toFixed(0)+' m)':'Irány: '+br.toFixed(0)+'° ('+nm+') · É '+(dN>=0?'+':'')+dN.toFixed(1)+' m, K '+(dE>=0?'+':'')+dE.toFixed(1)+' m';
 }
+S.h=null;S.br=null;
+function rot(){
+ const a=$('arw');if(S.h==null||S.br==null){a.style.display='none';$('ah').style.display='none';return}
+ a.style.display='block';$('ah').style.display='block';
+ a.style.transform='rotate('+(S.br-S.h)+'deg)';
+}
+function onOri(e){
+ let h=null;
+ if(typeof e.webkitCompassHeading==='number')h=e.webkitCompassHeading;
+ else if((e.absolute||e.type==='deviceorientationabsolute')&&e.alpha!=null)h=(360-e.alpha)%360;
+ if(h==null||!isFinite(h))return;
+ if(S.h==null)S.h=h;else{let d=((h-S.h+540)%360)-180;S.h=(S.h+d*0.25+360)%360}
+ rot();
+}
+async function enableCompass(){
+ try{
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+   const r=await DeviceOrientationEvent.requestPermission();
+   if(r!=='granted'){alert('Az iránytű engedélye meg lett tagadva. Safari: Beállítások → Safari → Mozgás és tájolás hozzáférés.');return}
+   window.addEventListener('deviceorientation',onOri,true);
+  }else{
+   window.addEventListener('deviceorientationabsolute',onOri,true);
+   window.addEventListener('deviceorientation',onOri,true);
+  }
+  $('cb').style.display='none';
+ }catch(e){alert('Az iránytű nem elérhető: '+e.message)}
+}
+$('cb').onclick=enableCompass;
 function startGps(){
  if(!navigator.geolocation){$('st').textContent='Nincs GPS-támogatás';return}
  navigator.geolocation.watchPosition(p=>{

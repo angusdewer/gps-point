@@ -52,9 +52,9 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
 <div class="c" id="box">
  <div class="mut" id="ph">1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.</div>
  <div class="big" id="tm"></div>
- <div class="row" style="margin-top:8px"><div><label>Hol állsz a karóhoz (A) képest?</label>
+ <div class="row" style="margin-top:8px"><div><label>Ide állj a következő mentéshez (automatikus)</label>
  <select id="pos"><option value="C">Középen (a karónál)</option><option value="N">Északra a karótól</option><option value="E">Keletre a karótól</option><option value="S">Délre a karótól</option><option value="W">Nyugatra a karótól</option></select></div>
- <div><label>Kör sugara (m)</label><input id="rad" type="number" value="4" step="0.5" min="0" inputmode="decimal"></div></div>
+ <div><label>Kör sugara (m, kb.)</label><input id="rad" type="number" value="4" step="0.5" min="0" inputmode="decimal"></div></div>
  <button id="b1">Itt vagyok</button>
  <button id="b2" disabled>Mentés (a mostani helyen)</button>
  <button id="b3" class="s" disabled>Befejezés és számítás</button>
@@ -89,7 +89,10 @@ function addSave(center){
  const pos=center===true?'C':$('pos').value,rad=+$('rad').value||0;
  const o={C:[0,0],N:[0,rad],E:[rad,0],S:[0,-rad],W:[-rad,0]}[pos]||[0,0];
  a.pos=pos;a.dE=o[0];a.dN=o[1];
- S.saves.push(a);S.last=Date.now();store();render();
+ S.saves.push(a);S.last=Date.now();
+ const ord=['N','E','S','W'],i=ord.indexOf(pos);
+ try{$('pos').value=ord[(i+1)%4]}catch(e){}
+ store();render();
  try{navigator.vibrate&&navigator.vibrate(80)}catch(e){}
 }
 function wake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>S.wl=l).catch(()=>{})}catch(e){}}
@@ -103,33 +106,38 @@ $('b2').onclick=()=>addSave();
 $('b3').onclick=finish;
 $('b4').onclick=()=>{if(confirm('Törlöd az eddigi mentéseket?')){S.saves=[];S.start=null;S.last=0;store();render();$('rs').style.display='none'}};
 
+function fmt(d){return d<1?Math.round(d*100)+' cm':d.toFixed(1)+' m'}
 function finish(){
  const T=parseT();if(!T||S.saves.length<2){alert('Legalább 2 mentés kell.');return}
  const R=111320,c=Math.cos(T.lat*Math.PI/180);
- // minden mérésből kivonjuk, hogy hol álltál a karóhoz képest -> a karó (A) telefon szerinti helye
+ // minden mérésből kivonjuk az ismert eltolást -> a karó (A) telefon szerinti helye
  const pts=S.saves.map(s=>({lat:s.lat-(s.dN||0)/R,lon:s.lon-(s.dE||0)/(R*c),acc:s.acc}));
  let sw=0,la=0,lo=0;
  for(const p of pts){const k=1/Math.max(p.acc,1)**2;sw+=k;la+=p.lat*k;lo+=p.lon*k}
  const m={lat:la/sw,lon:lo/sw};
- const dN=(T.lat-m.lat)*R,dE=(T.lon-m.lon)*R*c,d=Math.hypot(dN,dE);
+ // elmozdulás a karótól a célpontig
+ const vN=(T.lat-m.lat)*R,vE=(T.lon-m.lon)*R*c;
+ // ahol most állsz = az utolsó mentés helye (a karóhoz képest)
+ const last=S.saves[S.saves.length-1],zN=last.dN||0,zE=last.dE||0;
+ const dN=vN-zN,dE=vE-zE,d=Math.hypot(dN,dE);
  const br=(Math.atan2(dE,dN)*180/Math.PI+360)%360;
  const names=['É','ÉK','K','DK','D','DNy','Ny','ÉNy'],nm=names[Math.round(br/45)%8];
  let sN=0,sE=0;
  for(const p of pts){sN+=((p.lat-m.lat)*R)**2;sE+=((p.lon-m.lon)*R*c)**2}
  const sd=Math.sqrt((sN+sE)/Math.max(pts.length-1,1));
+ const dv=Math.hypot(vN,vE),bv=(Math.atan2(vE,vN)*180/Math.PI+360)%360;
  const r=$('rs');r.style.display='block';setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'start'}),50);
- r.innerHTML=`<div class="mut">Eredmény</div>
- <div class="big">${d<0.3?'A karó a célpont (±0,3 m)':'A karótól menj '+d.toFixed(1)+' m-t '+nm+' felé'}</div>
- <p>Irány: <b>${br.toFixed(0)}°</b> (${nm}), a <b>karótól (A pont)</b> indulva, nem onnan, ahol a telefon szerint állsz.<br>
- Észak: ${dN>=0?'+':''}${dN.toFixed(2)} m, Kelet: ${dE>=0?'+':''}${dE.toFixed(2)} m</p>
- <p class="mut">A karó telefon szerinti átlagolt helye: ${m.lat.toFixed(7)}, ${m.lon.toFixed(7)}<br>${S.saves.length} mentés, szórás: ${sd.toFixed(1)} m.<br>
- A szórás nagy részét a véletlen zaj adja; a rendszeres hibát (pl. ionoszféra) az átlagolás nem csökkenti. Reális javulás: kb. 30–50%.</p>`;
+ r.innerHTML=`<div class="mut">Eredmény (onnan, ahol most állsz)</div>
+ <div class="big">${d<0.05?'Itt van a célpont':'Menj '+fmt(d)+'-t '+nm+' felé'}</div>
+ <p>Irány: <b>${br.toFixed(0)}°</b> (${nm}). Észak: ${dN>=0?'+':''}${(dN*100).toFixed(0)} cm, Kelet: ${dE>=0?'+':''}${(dE*100).toFixed(0)} cm</p>
+ <p class="mut">A karótól nézve: ${fmt(dv)} ${bv.toFixed(0)}° irányban.<br>A karó telefon szerinti átlagolt helye: ${m.lat.toFixed(7)}, ${m.lon.toFixed(7)}<br>${S.saves.length} mentés, szórás: ${sd.toFixed(1)} m.<br>
+ A pontosság azon múlik, mennyire pontosan álltál a megadott helyeken. A rendszeres GPS-hibát az átlagolás nem csökkenti, a reális javulás kb. 30–50%.</p>`;
 }
 
 function render(){
  const on=!!S.start;
  $('b1').disabled=on;$('b2').disabled=!on;$('b3').disabled=!on||S.saves.length<2;
- $('ph').textContent=on?`2. Szúrj karót az A pontra. Állj a karótól N/E/S/W irányban a megadott sugárra (szalaggal kimérve), és mentéskor jelöld meg, hol állsz. ${$('iv').value} percenként nyomj mentést.`:'1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.';
+ $('ph').textContent=on?`2. Tegyél egy követ az Itt vagyok pontra. A legördülő mező mindig megmutatja, hova állj (a kőtől kb. a megadott sugárra); ott nyomj Mentést, a mező magától a következő helyre ugrik. ${$('iv').value} percenként mentsz. A végén az utolsó helyen Mentés, majd Befejezés, és ne mozdulj.`:'1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.';
  const lg=$('lg');
  if(S.saves.length){lg.style.display='block';
   lg.innerHTML='<table><tr><th>#</th><th>Idő</th><th>Hely</th><th>Fix</th><th>Pontosság</th></tr>'+S.saves.map((s,i)=>`<tr><td>${i+1}</td><td>${new Date(s.t).toLocaleTimeString('hu-HU')}</td><td>${{C:'közép',N:'É',E:'K',S:'D',W:'Ny'}[s.pos||'C']}</td><td>${s.n} db</td><td>±${s.acc.toFixed(1)} m</td></tr>`).join('')+'</table>'}

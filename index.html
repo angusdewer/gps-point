@@ -47,6 +47,8 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
  </div>
 </div>
 
+<div class="c res" id="rs" style="display:none"></div>
+
 <div class="c" id="box">
  <div class="mut" id="ph">1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.</div>
  <div class="big" id="tm"></div>
@@ -57,7 +59,6 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
 </div>
 
 <div class="c scroll" id="lg" style="display:none"></div>
-<div class="c res" id="rs" style="display:none"></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -107,7 +108,7 @@ function finish(){
  let sN=0,sE=0;
  for(const s of S.saves){sN+=((s.lat-m.lat)*R)**2;sE+=((s.lon-m.lon)*R*c)**2}
  const sd=Math.sqrt((sN+sE)/Math.max(S.saves.length-1,1));
- const r=$('rs');r.style.display='block';
+ const r=$('rs');r.style.display='block';setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'start'}),50);
  r.innerHTML=`<div class="mut">Eredmény</div>
  <div class="big">${d<0.3?'Maradj itt (±0,3 m)':'Menj '+d.toFixed(1)+' m-t '+nm+' felé'}</div>
  <p>Irány: <b>${br.toFixed(0)}°</b> (${nm}), a <b>„Itt vagyok”</b> pontról indulva.<br>

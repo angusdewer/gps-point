@@ -13,7 +13,7 @@ body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-app
 h1{font-size:20px;margin:6px 0 12px}
 .c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
 label{display:block;font-size:13px;color:var(--mut);margin-bottom:4px}
-input{width:100%;box-sizing:border-box;padding:10px;font-size:16px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+input,select{width:100%;box-sizing:border-box;padding:10px;font-size:16px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
 .row{display:flex;gap:8px}.row>*{flex:1}
 button{width:100%;padding:14px;font-size:17px;font-weight:600;border:0;border-radius:10px;background:var(--ac);color:#fff;margin-top:8px}
 button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
@@ -52,6 +52,9 @@ button.s{background:var(--bd);color:var(--tx)}button:disabled{opacity:.4}
 <div class="c" id="box">
  <div class="mut" id="ph">1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.</div>
  <div class="big" id="tm"></div>
+ <div class="row" style="margin-top:8px"><div><label>Hol állsz a karóhoz (A) képest?</label>
+ <select id="pos"><option value="C">Középen (a karónál)</option><option value="N">Északra a karótól</option><option value="E">Keletre a karótól</option><option value="S">Délre a karótól</option><option value="W">Nyugatra a karótól</option></select></div>
+ <div><label>Kör sugara (m)</label><input id="rad" type="number" value="4" step="0.5" min="0" inputmode="decimal"></div></div>
  <button id="b1">Itt vagyok</button>
  <button id="b2" disabled>Mentés (a mostani helyen)</button>
  <button id="b3" class="s" disabled>Befejezés és számítás</button>
@@ -81,8 +84,11 @@ function avgWindow(){
  for(const f of a){const k=1/Math.max(f.acc,1)**2;sw+=k;la+=f.lat*k;lo+=f.lon*k;ac+=f.acc}
  return{lat:la/sw,lon:lo/sw,acc:ac/a.length,n:a.length,t:now};
 }
-function addSave(){
+function addSave(center){
  const a=avgWindow();if(!a){alert('Még nincs GPS-fix.');return}
+ const pos=center===true?'C':$('pos').value,rad=+$('rad').value||0;
+ const o={C:[0,0],N:[0,rad],E:[rad,0],S:[0,-rad],W:[-rad,0]}[pos]||[0,0];
+ a.pos=pos;a.dE=o[0];a.dN=o[1];
  S.saves.push(a);S.last=Date.now();store();render();
  try{navigator.vibrate&&navigator.vibrate(80)}catch(e){}
 }
@@ -91,39 +97,42 @@ function wake(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').the
 $('b1').onclick=()=>{
  if(!parseT()){alert('Add meg a célkoordinátát, pl. 47.123456, 19.123456');return}
  if(!S.fixes.length){alert('Várj a GPS-fixre.');return}
- S.saves=[];S.start=Date.now();wake();addSave();
+ S.saves=[];S.start=Date.now();wake();$('pos').value='C';addSave(true);
 };
-$('b2').onclick=addSave;
+$('b2').onclick=()=>addSave();
 $('b3').onclick=finish;
 $('b4').onclick=()=>{if(confirm('Törlöd az eddigi mentéseket?')){S.saves=[];S.start=null;S.last=0;store();render();$('rs').style.display='none'}};
 
 function finish(){
  const T=parseT();if(!T||S.saves.length<2){alert('Legalább 2 mentés kell.');return}
+ const R=111320,c=Math.cos(T.lat*Math.PI/180);
+ // minden mérésből kivonjuk, hogy hol álltál a karóhoz képest -> a karó (A) telefon szerinti helye
+ const pts=S.saves.map(s=>({lat:s.lat-(s.dN||0)/R,lon:s.lon-(s.dE||0)/(R*c),acc:s.acc}));
  let sw=0,la=0,lo=0;
- for(const s of S.saves){const k=1/Math.max(s.acc,1)**2;sw+=k;la+=s.lat*k;lo+=s.lon*k}
- const m={lat:la/sw,lon:lo/sw},R=111320,c=Math.cos(T.lat*Math.PI/180);
+ for(const p of pts){const k=1/Math.max(p.acc,1)**2;sw+=k;la+=p.lat*k;lo+=p.lon*k}
+ const m={lat:la/sw,lon:lo/sw};
  const dN=(T.lat-m.lat)*R,dE=(T.lon-m.lon)*R*c,d=Math.hypot(dN,dE);
  const br=(Math.atan2(dE,dN)*180/Math.PI+360)%360;
  const names=['É','ÉK','K','DK','D','DNy','Ny','ÉNy'],nm=names[Math.round(br/45)%8];
  let sN=0,sE=0;
- for(const s of S.saves){sN+=((s.lat-m.lat)*R)**2;sE+=((s.lon-m.lon)*R*c)**2}
- const sd=Math.sqrt((sN+sE)/Math.max(S.saves.length-1,1));
+ for(const p of pts){sN+=((p.lat-m.lat)*R)**2;sE+=((p.lon-m.lon)*R*c)**2}
+ const sd=Math.sqrt((sN+sE)/Math.max(pts.length-1,1));
  const r=$('rs');r.style.display='block';setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'start'}),50);
  r.innerHTML=`<div class="mut">Eredmény</div>
- <div class="big">${d<0.3?'Maradj itt (±0,3 m)':'Menj '+d.toFixed(1)+' m-t '+nm+' felé'}</div>
- <p>Irány: <b>${br.toFixed(0)}°</b> (${nm}), a <b>„Itt vagyok”</b> pontról indulva.<br>
+ <div class="big">${d<0.3?'A karó a célpont (±0,3 m)':'A karótól menj '+d.toFixed(1)+' m-t '+nm+' felé'}</div>
+ <p>Irány: <b>${br.toFixed(0)}°</b> (${nm}), a <b>karótól (A pont)</b> indulva, nem onnan, ahol a telefon szerint állsz.<br>
  Észak: ${dN>=0?'+':''}${dN.toFixed(2)} m, Kelet: ${dE>=0?'+':''}${dE.toFixed(2)} m</p>
- <p class="mut">Átlagolt pozíció: ${m.lat.toFixed(7)}, ${m.lon.toFixed(7)}<br>${S.saves.length} mentés, szórás: ${sd.toFixed(1)} m.<br>
- Ez csak a véletlen zajt csökkenti; a rendszeres hibát (pl. ionoszféra) nem. Reális javulás: kb. 30–50%.</p>`;
+ <p class="mut">A karó telefon szerinti átlagolt helye: ${m.lat.toFixed(7)}, ${m.lon.toFixed(7)}<br>${S.saves.length} mentés, szórás: ${sd.toFixed(1)} m.<br>
+ A szórás nagy részét a véletlen zaj adja; a rendszeres hibát (pl. ionoszféra) az átlagolás nem csökkenti. Reális javulás: kb. 30–50%.</p>`;
 }
 
 function render(){
  const on=!!S.start;
  $('b1').disabled=on;$('b2').disabled=!on;$('b3').disabled=!on||S.saves.length<2;
- $('ph').textContent=on?`2. Sétálj 4–5 m-es körben az „Itt vagyok” pont körül, szimmetrikusan (É, K, D, Ny). ${$('iv').value} percenként nyomj mentést.`:'1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.';
+ $('ph').textContent=on?`2. Szúrj karót az A pontra. Állj a karótól N/E/S/W irányban a megadott sugárra (szalaggal kimérve), és mentéskor jelöld meg, hol állsz. ${$('iv').value} percenként nyomj mentést.`:'1. Add meg a célt, menj oda, és ha a telefon szerint ott vagy, nyomd meg az „Itt vagyok” gombot.';
  const lg=$('lg');
  if(S.saves.length){lg.style.display='block';
-  lg.innerHTML='<table><tr><th>#</th><th>Idő</th><th>Fix</th><th>Pontosság</th></tr>'+S.saves.map((s,i)=>`<tr><td>${i+1}</td><td>${new Date(s.t).toLocaleTimeString('hu-HU')}</td><td>${s.n} db</td><td>±${s.acc.toFixed(1)} m</td></tr>`).join('')+'</table>'}
+  lg.innerHTML='<table><tr><th>#</th><th>Idő</th><th>Hely</th><th>Fix</th><th>Pontosság</th></tr>'+S.saves.map((s,i)=>`<tr><td>${i+1}</td><td>${new Date(s.t).toLocaleTimeString('hu-HU')}</td><td>${{C:'közép',N:'É',E:'K',S:'D',W:'Ny'}[s.pos||'C']}</td><td>${s.n} db</td><td>±${s.acc.toFixed(1)} m</td></tr>`).join('')+'</table>'}
  else lg.style.display='none';
 }
 
